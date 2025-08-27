@@ -1,7 +1,8 @@
 # PyQt5==5.15.9
-chromadb==0.3.25
+chromadb==1.0.20
 pypdf==3.17.4
 sentence-transformers==2.2.2
 huggingface-hub==0.16.4
 python-dateutil==2.8.2
-pydantic==1.10.13
+pydantic>=1.10.13
+numpy<2.0.0

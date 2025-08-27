@@ -476,10 +476,91 @@ class MainWindow(QMainWindow):
             self.file_info_text.setText(f"Error reading file: {str(e)}")
     
     def start_sync(self):
-        """Start database synchronization."""
+        """Start database synchronization with confirmation dialog."""
         if not self.current_folder or not self.chroma_manager:
             return
         
+        try:
+            # Preview changes that will be made
+            changes = self.chroma_manager.preview_sync_changes(self.current_folder)
+            
+            # Create confirmation message
+            message = "The following changes will be made to the database:\n\n"
+            
+            if changes['new_files']:
+                message += f"📄 New files to add: {len(changes['new_files'])}\n"
+                if len(changes['new_files']) <= 5:
+                    for filename in changes['new_files']:
+                        message += f"  • {filename}\n"
+                else:
+                    for filename in changes['new_files'][:3]:
+                        message += f"  • {filename}\n"
+                    message += f"  • ... and {len(changes['new_files']) - 3} more\n"
+                message += "\n"
+            
+            if changes['modified_files']:
+                message += f"🔄 Modified files to re-index: {len(changes['modified_files'])}\n"
+                if len(changes['modified_files']) <= 5:
+                    for filename in changes['modified_files']:
+                        message += f"  • {filename}\n"
+                else:
+                    for filename in changes['modified_files'][:3]:
+                        message += f"  • {filename}\n"
+                    message += f"  • ... and {len(changes['modified_files']) - 3} more\n"
+                message += "\n"
+            
+            if changes['removed_files']:
+                message += f"🗑️ Files to remove from database: {len(changes['removed_files'])}\n"
+                if len(changes['removed_files']) <= 5:
+                    for filename in changes['removed_files']:
+                        message += f"  • {filename}\n"
+                else:
+                    for filename in changes['removed_files'][:3]:
+                        message += f"  • {filename}\n"
+                    message += f"  • ... and {len(changes['removed_files']) - 3} more\n"
+                message += "\n"
+            
+            if changes['corrupted_files']:
+                message += f"⚠️ Files with errors: {len(changes['corrupted_files'])}\n"
+                for filename in changes['corrupted_files']:
+                    message += f"  • {filename}\n"
+                message += "\n"
+            
+            # Show totals
+            total_changes = len(changes['new_files']) + len(changes['modified_files']) + len(changes['removed_files'])
+            
+            if total_changes == 0 and not changes['corrupted_files']:
+                QMessageBox.information(self, "No Changes", "The database is already up to date with the selected folder.")
+                return
+            
+            if total_changes > 0:
+                message += f"Total changes: {total_changes}\n\n"
+                message += "Do you want to proceed with the synchronization?"
+                
+                # Show confirmation dialog
+                reply = QMessageBox.question(
+                    self, 
+                    "Confirm Synchronization", 
+                    message,
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if reply == QMessageBox.No:
+                    return
+            elif changes['corrupted_files']:
+                message += "Only corrupted files were found. No database changes will be made."
+                QMessageBox.warning(self, "Corrupted Files", message)
+                return
+            
+            # Proceed with sync
+            self._execute_sync()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to preview sync changes: {str(e)}")
+    
+    def _execute_sync(self):
+        """Execute the actual sync operation."""
         # Disable sync button and show progress
         self.sync_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
@@ -503,13 +584,19 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         
         # Show results
-        message = f"Sync completed!\n"
-        message += f"Added: {added} files\n"
-        message += f"Removed: {removed} files\n"
-        message += f"Corrupted: {len(corrupted)} files"
+        message = f"Sync completed!\n\n"
+        message += f"✅ Files processed: {added}\n"
+        message += f"🗑️ Files removed: {removed}\n"
+        
+        if len(corrupted) > 0:
+            message += f"⚠️ Files with errors: {len(corrupted)}\n"
         
         if corrupted:
-            message += f"\n\nCorrupted files:\n" + "\n".join(corrupted)
+            message += f"\nFiles with errors:\n"
+            for error_file in corrupted[:5]:  # Show first 5 errors
+                message += f"  • {error_file}\n"
+            if len(corrupted) > 5:
+                message += f"  • ... and {len(corrupted) - 5} more\n"
         
         QMessageBox.information(self, "Sync Complete", message)
         self.statusBar().showMessage("Sync completed successfully")
@@ -587,7 +674,7 @@ class MainWindow(QMainWindow):
             return
         
         try:
-            documents = self.chroma_manager.get_all_documents(1000)
+            documents = self.chroma_manager.get_all_documents(10000)
             self.display_documents(documents)
             
         except Exception as e:

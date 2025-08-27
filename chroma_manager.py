@@ -26,20 +26,8 @@ class ChromaManager:
             chroma_version = chromadb.__version__
             print(f"ChromaDB version detected: {chroma_version}")
             
-            # Initialize ChromaDB client based on version
-            if hasattr(chromadb, 'PersistentClient'):
-                # ChromaDB 0.3.x
-                self.client = chromadb.PersistentClient(path=self.db_path)
-            elif hasattr(chromadb, 'Client'):
-                # ChromaDB 0.4.x or newer
-                self.client = chromadb.Client(
-                    chromadb.config.Settings(
-                        chroma_db_impl="duckdb+parquet",
-                        persist_directory=self.db_path
-                    )
-                )
-            else:
-                raise Exception("Unsupported ChromaDB version")
+            # Initialize ChromaDB client - use PersistentClient for ChromaDB 1.0.x
+            self.client = chromadb.PersistentClient(path=self.db_path)
             
             # Get or create collection
             self.collection = self.client.get_or_create_collection(
@@ -91,10 +79,10 @@ class ChromaManager:
             print(f"Warning: Could not retrieve existing files: {e}")
             return {}
     
-    def sync_database(self, folder_path: str, progress_callback=None) -> Tuple[int, int, List[str]]:
+    def preview_sync_changes(self, folder_path: str) -> Dict:
         """
-        Sync the database with the PDF folder.
-        Returns: (added_count, removed_count, corrupted_files)
+        Preview what changes would be made during sync without actually making them.
+        Returns: dict with new_files, removed_files, modified_files, and corrupted_files
         """
         if not os.path.exists(folder_path):
             raise Exception(f"Folder does not exist: {folder_path}")
@@ -114,18 +102,47 @@ class ChromaManager:
                 except Exception:
                     corrupted_files.append(filename)
         
-        # Find new files and removed files
+        # Find new, removed, and modified files
         new_files = [f for f in current_files if f not in existing_files]
         removed_files = [f for f in existing_files if f not in current_files]
+        modified_files = [f for f in current_files if f in existing_files and current_files[f] != existing_files[f]]
+        
+        return {
+            'new_files': new_files,
+            'removed_files': removed_files,
+            'modified_files': modified_files,
+            'corrupted_files': corrupted_files
+        }
+
+    def sync_database(self, folder_path: str, progress_callback=None) -> Tuple[int, int, List[str]]:
+        """
+        Sync the database with the PDF folder.
+        Returns: (added_count, removed_count, corrupted_files)
+        """
+        if not os.path.exists(folder_path):
+            raise Exception(f"Folder does not exist: {folder_path}")
+        
+        # Get sync changes preview
+        changes = self.preview_sync_changes(folder_path)
+        new_files = changes['new_files']
+        removed_files = changes['removed_files']
+        modified_files = changes['modified_files']
+        corrupted_files = changes['corrupted_files'].copy()
         
         # Remove deleted files from database
         removed_count = self._remove_files_from_db(removed_files)
         
-        # Add new files to database
+        # Remove and re-add modified files
+        if modified_files:
+            self._remove_files_from_db(modified_files)
+        
+        # Add new files and re-add modified files to database
         added_count = 0
-        if new_files:
-            total_new = len(new_files)
-            for i, filename in enumerate(new_files):
+        files_to_process = new_files + modified_files
+        
+        if files_to_process:
+            total_files = len(files_to_process)
+            for i, filename in enumerate(files_to_process):
                 try:
                     filepath = os.path.join(folder_path, filename)
                     self._add_file_to_db(filepath)
@@ -133,8 +150,11 @@ class ChromaManager:
                     
                     # Update progress
                     if progress_callback:
-                        progress = (i + 1) / total_new * 100
-                        progress_callback(progress, f"Processing {filename}")
+                        progress = (i + 1) / total_files * 100
+                        if filename in modified_files:
+                            progress_callback(progress, f"Re-indexing modified file: {filename}")
+                        else:
+                            progress_callback(progress, f"Processing new file: {filename}")
                         
                 except Exception as e:
                     corrupted_files.append(f"{filename} (Error: {str(e)})")
