@@ -34,6 +34,9 @@ parser.add_argument(
 parser.add_argument(
     "--chroma_db_path", default=os.path.expanduser("~/Projects/mcp_demo/pdfs_db"))
 parser.add_argument("--limit_text", default=-1)
+parser.add_argument(
+    "--read_only", action="store_true", 
+    help="Enable read-only mode for ChromaDB (prevents file modifications, ideal for network storage)")
 
 args = parser.parse_args()
 
@@ -853,23 +856,25 @@ def initialize_chromadb():
     global chroma_client, chroma_collection
     
     try:
-        # Initialize ChromaDB client with read-only SQLite settings
-        # This prevents file modifications during read operations
+        # Prepare ChromaDB settings
+        settings_config = Settings(anonymized_telemetry=False)
+        
+        # Apply read-only SQLite configuration if requested
+        if args.read_only:
+            logger.info("Initializing ChromaDB in read-only mode for network storage compatibility")
+            settings_config.sqlite_options = {
+                "journal_mode": "OFF",      # Disable WAL journaling
+                "synchronous": "OFF",       # No disk synchronization  
+                "cache_size": -64000,       # 64MB cache (negative = KB)
+                "temp_store": "MEMORY",     # Store temp tables in memory
+                "mmap_size": 0,             # Disable memory mapping
+                "query_only": True          # Read-only mode
+            }
+        
+        # Initialize ChromaDB client
         chroma_client = chromadb.PersistentClient(
             path=args.chroma_db_path,
-            settings=Settings(
-                anonymized_telemetry=False,
-                # Configure SQLite for read-only mode to prevent file modifications
-                # This is crucial for network storage compatibility
-                sqlite_options={
-                    "journal_mode": "OFF",      # Disable WAL journaling
-                    "synchronous": "OFF",       # No disk synchronization
-                    "cache_size": -64000,       # 64MB cache (negative = KB)
-                    "temp_store": "MEMORY",     # Store temp tables in memory
-                    "mmap_size": 0,             # Disable memory mapping
-                    "query_only": True          # Read-only mode
-                }
-            )
+            settings=settings_config
         )
         
         # Get the first available collection (assuming there's one)
