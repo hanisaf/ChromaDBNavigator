@@ -36,7 +36,8 @@ class SyncWorker(QThread):
     def run(self):
         try:
             def progress_callback(progress, message):
-                self.progress_updated.emit(progress, message)
+                print(f"SyncWorker emitting progress: {progress}% - {message}")  # Debug output
+                self.progress_updated.emit(int(progress), message)
             
             added, removed, corrupted = self.chroma_manager.sync_database(
                 self.folder_path, progress_callback
@@ -166,6 +167,8 @@ class MainWindow(QMainWindow):
         self.sync_btn.setEnabled(False)
         
         self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
         self.progress_bar.setVisible(False)
         
         pdf_row.addWidget(folder_label)
@@ -575,6 +578,7 @@ class MainWindow(QMainWindow):
     
     def update_sync_progress(self, progress, message):
         """Update sync progress bar."""
+        print(f"Progress update: {progress}% - {message}")  # Debug output
         self.progress_bar.setValue(int(progress))
         self.statusBar().showMessage(message)
     
@@ -674,7 +678,7 @@ class MainWindow(QMainWindow):
             return
         
         try:
-            documents = self.chroma_manager.get_all_documents(10000)
+            documents = self.chroma_manager.get_all_documents()  # Get all documents without limit
             self.display_documents(documents)
             
         except Exception as e:
@@ -739,6 +743,19 @@ class MainWindow(QMainWindow):
         stats_text += f"==================\n\n"
         stats_text += f"Total Chunks: {stats['total_chunks']:,}\n"
         stats_text += f"Unique Files: {stats['unique_files']:,}\n\n"
+        
+        # Display device information
+        if 'device_info' in stats:
+            device_info = stats['device_info']
+            stats_text += f"Embedding Device:\n"
+            if 'error' in device_info:
+                stats_text += f"  Error: {device_info['error']}\n"
+            else:
+                stats_text += f"  Device: {device_info.get('device', 'unknown')}\n"
+                stats_text += f"  Description: {device_info.get('device_name', 'Unknown')}\n"
+                if 'note' in device_info:
+                    stats_text += f"  Note: {device_info['note']}\n"
+            stats_text += "\n"
         
         if stats['chunk_types']:
             stats_text += f"Chunk Types:\n"

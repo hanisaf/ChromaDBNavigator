@@ -54,6 +54,36 @@ class PDFProcessor:
         except Exception as e:
             raise Exception(f"Error processing PDF {filepath}: {str(e)}")
     
+    def extract_text_per_page(self, filepath: str) -> Tuple[List[Tuple[int, str]], Dict]:
+        """Extract text from PDF page by page and return list of (page_num, text) tuples with metadata."""
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(filepath)
+            pages = []
+            
+            # Extract text from each page individually
+            for page_num, page in enumerate(reader.pages):
+                page_text = page.extract_text()
+                if page_text:
+                    pages.append((page_num + 1, page_text.strip()))
+                else:
+                    # Include empty pages to maintain page numbering
+                    pages.append((page_num + 1, ""))
+            
+            # Basic metadata
+            metadata = {
+                'filename': os.path.basename(filepath),
+                'filepath': filepath,
+                'total_pages': len(reader.pages),
+                'extraction_date': datetime.now().isoformat(),
+                'file_size': os.path.getsize(filepath)
+            }
+            
+            return pages, metadata
+            
+        except Exception as e:
+            raise Exception(f"Error processing PDF {filepath}: {str(e)}")
+    
     def chunk_text_semantically(self, text: str, metadata: Dict) -> List[Dict]:
         """Chunk text using semantic splitting with fallback to character-based splitting."""
         chunks = []
@@ -95,6 +125,34 @@ class PDFProcessor:
         
         return chunks
     
+    def chunk_text_page(self, filepath: str, metadata: Dict) -> List[Dict]:
+        """Chunk text by page - one chunk per page."""
+        chunks = []
+        
+        try:
+            # Extract text page by page
+            pages, _ = self.extract_text_per_page(filepath)
+            
+            for page_num, page_text in pages:
+                stripped_text = page_text.strip()
+                # Only create chunks for pages with meaningful content (at least 10 characters)
+                if stripped_text and len(stripped_text) >= 10:
+                    chunk_data = {
+                        'text': stripped_text,
+                        'chunk_index': page_num - 1,  # 0-indexed chunk numbering
+                        'page_number': page_num,
+                        'chunk_type': 'page',
+                        'chunk_size': len(stripped_text),
+                        **metadata
+                    }
+                    chunks.append(chunk_data)
+                # Skip empty pages and pages with too little content
+            
+            return chunks
+            
+        except Exception as e:
+            raise Exception(f"Error chunking PDF by pages: {str(e)}")
+    
     def _split_by_academic_structure(self, text: str) -> List[str]:
         """Split text by academic document structure."""
         # Common academic section headers
@@ -127,12 +185,14 @@ class PDFProcessor:
         chunks = []
         
         for i, chunk in enumerate(text_chunks):
-            if chunk.strip():
+            stripped_chunk = chunk.strip()
+            # Only create chunks with meaningful content (at least 10 characters)
+            if stripped_chunk and len(stripped_chunk) >= 10:
                 chunk_data = {
-                    'text': chunk.strip(),
+                    'text': stripped_chunk,
                     'chunk_index': i,
                     'chunk_type': 'recursive',
-                    'chunk_size': len(chunk.strip()),
+                    'chunk_size': len(stripped_chunk),
                     **metadata
                 }
                 chunks.append(chunk_data)
@@ -187,29 +247,19 @@ class PDFProcessor:
             if chunk.strip():
                 chunks.append(chunk)
         
-        return chunks if chunks else [text]
+        # Only return chunks if we have non-empty text and chunks
+        return chunks if chunks else ([text] if text.strip() else [])
     
     def process_pdf(self, filepath: str) -> List[Dict]:
         """Main method to process a PDF file and return chunked data."""
-        # Extract text and basic metadata
-        text, metadata = self.extract_text_from_pdf(filepath)
+        # Extract basic metadata (we'll get page text separately)
+        _, metadata = self.extract_text_from_pdf(filepath)
         
         # Extract APA reference from filename
         apa_ref = self.extract_apa_reference(metadata['filename'])
         metadata['apa_reference'] = apa_ref
         
-        # Chunk the text
-        chunks = self.chunk_text_semantically(text, metadata)
-        
-        # Add page information to chunks
-        for chunk in chunks:
-            # Try to extract page number from chunk text
-            page_match = re.search(r'--- Page (\d+) ---', chunk['text'])
-            if page_match:
-                chunk['page_number'] = int(page_match.group(1))
-                # Clean up the page marker from the text
-                chunk['text'] = re.sub(r'--- Page \d+ ---\s*', '', chunk['text'])
-            else:
-                chunk['page_number'] = 1  # Default to page 1 if can't determine
+        # Chunk the text by pages
+        chunks = self.chunk_text_page(filepath, metadata)
         
         return chunks

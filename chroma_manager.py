@@ -3,10 +3,31 @@ import hashlib
 from typing import List, Dict, Optional, Tuple
 import chromadb
 from sentence_transformers import SentenceTransformer
+import torch
 
 
 class ChromaManager:
     """Manages ChromaDB operations for PDF chunks."""
+    
+    @staticmethod
+    def _get_optimal_device():
+        """Detect and return the optimal device for embeddings (Metal/MPS, CUDA, or CPU)."""
+        try:
+            # Check for CUDA first (generally fastest for large workloads)
+            if torch.cuda.is_available():
+                print(f"CUDA available - using GPU: {torch.cuda.get_device_name()}")
+                return "cuda"
+            # Check for Metal Performance Shaders (macOS)
+            elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+                print("Metal Performance Shaders (MPS) available - using Metal acceleration")
+                print("Note: Metal acceleration works best with larger document collections")
+                return "mps"
+            else:
+                print("Using CPU for embeddings")
+                return "cpu"
+        except Exception as e:
+            print(f"Error detecting optimal device, falling back to CPU: {e}")
+            return "cpu"
     
     def __init__(self, db_path: str = None, collection_name: str = "references"):
         if db_path is None:
@@ -35,11 +56,49 @@ class ChromaManager:
                 metadata={"description": f"PDF document chunks with metadata - {self.collection_name}"}
             )
             
-            # Initialize embedding model
-            self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            # Initialize embedding model with optimal device
+            self.device = self._get_optimal_device()
+            self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=self.device)
+            
+            # For Metal/MPS, we may need to set additional optimizations
+            if self.device == "mps":
+                # Enable Metal optimizations if available
+                try:
+                    # Set model to use Metal backend
+                    self.embedding_model = self.embedding_model.to(self.device)
+                    print("Successfully moved embedding model to Metal device")
+                except Exception as e:
+                    print(f"Warning: Could not move model to Metal device: {e}")
+                    # Fallback to CPU
+                    self.device = "cpu"
+                    self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device="cpu")
             
         except Exception as e:
             raise Exception(f"Failed to initialize ChromaDB: {str(e)}")
+    
+    def get_device_info(self) -> Dict[str, str]:
+        """Get information about the device being used for embeddings."""
+        device_info = {
+            'device': getattr(self, 'device', 'unknown'),
+            'device_name': 'Unknown'
+        }
+        
+        try:
+            if hasattr(self, 'device'):
+                device_info['device'] = self.device
+                if self.device == 'mps':
+                    device_info['device_name'] = 'Apple Metal Performance Shaders (GPU acceleration)'
+                    device_info['note'] = 'Best performance with large document collections'
+                elif self.device == 'cuda':
+                    device_info['device_name'] = f'NVIDIA GPU: {torch.cuda.get_device_name()}'
+                    device_info['note'] = 'Optimized for large-scale processing'
+                else:
+                    device_info['device_name'] = 'CPU'
+                    device_info['note'] = 'Reliable performance for all workloads'
+        except Exception as e:
+            device_info['error'] = str(e)
+            
+        return device_info
     
     def _generate_file_hash(self, filepath: str) -> str:
         """Generate a hash for a file to detect changes."""
@@ -60,8 +119,8 @@ class ChromaManager:
             # Get all documents and extract filename -> hash mapping
             # For ChromaDB 0.3.25, we need to use get() with proper parameters
             results = self.collection.get(
-                include=['metadatas'],
-                limit=10000  # Adjust based on expected size
+                include=['metadatas']
+                # No limit - get all documents
             )
             
             existing_files = {}
@@ -94,7 +153,7 @@ class ChromaManager:
         current_files = {}
         corrupted_files = []
         
-        for filename in os.listdir(folder_path):
+        for filename in sorted(os.listdir(folder_path)):  # Sort alphabetically
             if filename.lower().endswith('.pdf'):
                 filepath = os.path.join(folder_path, filename)
                 try:
@@ -122,6 +181,10 @@ class ChromaManager:
         if not os.path.exists(folder_path):
             raise Exception(f"Folder does not exist: {folder_path}")
         
+        # Initial progress
+        if progress_callback:
+            progress_callback(0, "Analyzing folder changes...")
+        
         # Get sync changes preview
         changes = self.preview_sync_changes(folder_path)
         new_files = changes['new_files']
@@ -129,35 +192,58 @@ class ChromaManager:
         modified_files = changes['modified_files']
         corrupted_files = changes['corrupted_files'].copy()
         
+        # Calculate total operations for progress tracking
+        total_operations = len(removed_files) + len(modified_files) + len(new_files) + len(modified_files)
+        current_operation = 0
+        
+        def update_progress(message, increment=True):
+            nonlocal current_operation
+            if increment:
+                current_operation += 1
+            if progress_callback and total_operations > 0:
+                progress = (current_operation / total_operations) * 100
+                progress_callback(min(progress, 100), message)
+        
         # Remove deleted files from database
+        if removed_files:
+            update_progress("Removing deleted files from database...", False)
+            for filename in sorted(removed_files):  # Sort alphabetically
+                update_progress(f"Removing: {filename}")
+        
         removed_count = self._remove_files_from_db(removed_files)
         
-        # Remove and re-add modified files
+        # Remove modified files (they'll be re-added)
+        if modified_files:
+            update_progress("Removing modified files for re-indexing...", False)
+            for filename in sorted(modified_files):  # Sort alphabetically
+                update_progress(f"Preparing to re-index: {filename}")
+        
         if modified_files:
             self._remove_files_from_db(modified_files)
         
         # Add new files and re-add modified files to database
         added_count = 0
-        files_to_process = new_files + modified_files
+        files_to_process = sorted(new_files + modified_files)  # Sort alphabetically
         
         if files_to_process:
-            total_files = len(files_to_process)
-            for i, filename in enumerate(files_to_process):
+            for filename in files_to_process:
                 try:
                     filepath = os.path.join(folder_path, filename)
+                    
+                    if filename in modified_files:
+                        update_progress(f"Re-indexing modified file: {filename}")
+                    else:
+                        update_progress(f"Processing new file: {filename}")
+                    
                     self._add_file_to_db(filepath)
                     added_count += 1
-                    
-                    # Update progress
-                    if progress_callback:
-                        progress = (i + 1) / total_files * 100
-                        if filename in modified_files:
-                            progress_callback(progress, f"Re-indexing modified file: {filename}")
-                        else:
-                            progress_callback(progress, f"Processing new file: {filename}")
                         
                 except Exception as e:
                     corrupted_files.append(f"{filename} (Error: {str(e)})")
+        
+        # Final progress update
+        if progress_callback:
+            progress_callback(100, "Synchronization complete")
         
         return added_count, removed_count, corrupted_files
     
@@ -270,15 +356,16 @@ class ChromaManager:
         try:
             count = self.collection.count()
             
-            # Get sample of documents for metadata analysis
-            results = self.collection.get(limit=1000, include=['metadatas'])
+            # Get all documents for metadata analysis (no limit)
+            results = self.collection.get(include=['metadatas'])
             
             stats = {
                 'total_chunks': count,
                 'unique_files': 0,
                 'total_pages': 0,
                 'chunk_types': {},
-                'file_extensions': {}
+                'file_extensions': {},
+                'device_info': self.get_device_info()
             }
             
             if results['metadatas']:
@@ -309,13 +396,18 @@ class ChromaManager:
             print(f"Could not get database stats: {e}")
             return {'total_chunks': 0, 'error': str(e)}
     
-    def get_all_documents(self, limit: int = 1000) -> List[Dict]:
+    def get_all_documents(self, limit: int = None) -> List[Dict]:
         """Get all documents from the database."""
         try:
-            results = self.collection.get(
-                limit=limit,
-                include=['documents', 'metadatas']
-            )
+            if limit is not None:
+                results = self.collection.get(
+                    limit=limit,
+                    include=['documents', 'metadatas']
+                )
+            else:
+                results = self.collection.get(
+                    include=['documents', 'metadatas']
+                )
             
             documents = []
             if results['documents'] and results['metadatas']:
