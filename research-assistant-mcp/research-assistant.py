@@ -560,6 +560,20 @@ def get_system_prompt() -> Dict[str, Any]:
         ]
     }
 
+@mcp.prompt()
+def get_prompt_template() -> str:
+    """
+    Provide a prompt template for interacting with the research assistant.
+    
+    Returns:
+        A string containing the prompt template
+    """
+    return (
+        "You are a research assistant with access to various tools for reading and analyzing PDF documents. "
+        "When answering questions, always use the available tools to find accurate information. "
+        "Cite your sources using APA format (Author year) based on the filenames or metadata of the PDFs you reference. "
+        "Do not fabricate information; if you cannot find an answer using the tools, state that you do not know."
+    )
 
 @mcp.tool()
 def search_title(query: str, top_n: int = 10) -> Dict[str, Any]:
@@ -835,14 +849,27 @@ def register_pdfs(
             continue
 
 def initialize_chromadb():
-    """Initialize ChromaDB client and collection."""
+    """Initialize ChromaDB client and collection in read-only mode."""
     global chroma_client, chroma_collection
     
     try:
-        # Initialize ChromaDB client with the specified path
+        # Initialize ChromaDB client with read-only SQLite settings
+        # This prevents file modifications during read operations
         chroma_client = chromadb.PersistentClient(
             path=args.chroma_db_path,
-            settings=Settings(anonymized_telemetry=False)
+            settings=Settings(
+                anonymized_telemetry=False,
+                # Configure SQLite for read-only mode to prevent file modifications
+                # This is crucial for network storage compatibility
+                sqlite_options={
+                    "journal_mode": "OFF",      # Disable WAL journaling
+                    "synchronous": "OFF",       # No disk synchronization
+                    "cache_size": -64000,       # 64MB cache (negative = KB)
+                    "temp_store": "MEMORY",     # Store temp tables in memory
+                    "mmap_size": 0,             # Disable memory mapping
+                    "query_only": True          # Read-only mode
+                }
+            )
         )
         
         # Get the first available collection (assuming there's one)
