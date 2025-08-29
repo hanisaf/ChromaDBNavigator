@@ -91,6 +91,14 @@ class MainWindow(QMainWindow):
         # Status bar
         self.statusBar().showMessage("Ready")
         
+        # Set initial values if provided
+        if self.current_db_path:
+            self.db_path_label.setText(self.current_db_path)
+        if self.current_folder:
+            self.folder_path_label.setText(self.current_folder)
+            self.sync_btn.setEnabled(True)
+            self.load_file_tree()
+
         # Apply styling
         self.apply_styling()
         
@@ -182,13 +190,6 @@ class MainWindow(QMainWindow):
         
         parent_layout.addWidget(controls_frame)
         
-        # Set initial values if provided
-        if self.current_db_path:
-            self.db_path_label.setText(self.current_db_path)
-        if self.current_folder:
-            self.folder_path_label.setText(self.current_folder)
-            self.sync_btn.setEnabled(True)
-            self.load_file_tree()
     
     def create_file_browser(self, parent):
         """Create the left panel file browser."""
