@@ -3,6 +3,7 @@
 # some code from https://github.com/labeveryday/mcp_pdf_reader
 
 import base64
+from io import BytesIO
 import re, sys
 import mimetypes
 import os
@@ -54,8 +55,6 @@ chroma_collection = None
 # Key: URI, Value: dict(name, path, size, mtime, pages)
 root : Path = Path('.')  # Will be reset in main
 RESOURCE_INDEX: dict[str, dict] = {}
-URI_INDEX: dict[str, str] = {}  # Key: display name, Value: URI
-RESOURCES: dict = {}
 
 def normalize_and_validate_file_path(file_path: str) -> Path:
     """Validate that the file path exists and is a PDF"""
@@ -69,15 +68,15 @@ def normalize_and_validate_file_path(file_path: str) -> Path:
         raise ValueError(f"File is not a PDF: {file_path}")
     return path
 
-def get_page_range(doc: fitz.Document, page_range: Optional[Dict] = None) -> Tuple[int, int]:
+def get_page_range(doc: fitz.Document, page_range: Optional[Dict[str, int]] = None) -> Tuple[int, int]:
     """Get validated page range for the document"""
     total_pages = len(doc)
     
     if page_range is None:
         return 0, total_pages - 1
     
-    start = page_range.get('start', 1) - 1  # Convert to 0-based indexing
-    end = page_range.get('end', total_pages) - 1
+    start = int(page_range.get('start', 1)) - 1  # Convert to 0-based indexing
+    end = int(page_range.get('end', total_pages)) - 1
     
     start = max(0, min(start, total_pages - 1))
     end = max(start, min(end, total_pages - 1))
@@ -85,13 +84,13 @@ def get_page_range(doc: fitz.Document, page_range: Optional[Dict] = None) -> Tup
     return start, end
 
 @mcp.tool()
-def read_pdf_text(file_path: str, page_range: Optional[Dict] = None) -> Dict[str, Any]:
+def read_pdf_text(file_path: str, page_range_start: Optional[int|str] = None, page_range_end: Optional[int|str] = None) -> Dict[str, Any]:
     """
     Extract text content from a PDF file
     
     Args:
         file_path: Path to the PDF file to read
-        page_range: Optional dict with 'start' and 'end' page numbers (1-indexed)
+        page_range_start and page_range_end page numbers (1-indexed)
     
     Returns:
         Dictionary containing extracted text and metadata
@@ -105,6 +104,13 @@ def read_pdf_text(file_path: str, page_range: Optional[Dict] = None) -> Dict[str
         path = normalize_and_validate_file_path(file_path)
         
         with fitz.open(str(path)) as doc:
+            if page_range_start is not None or page_range_end is not None:
+                page_range = {
+                    "start": page_range_start,
+                    "end": page_range_end
+                }
+            else:
+                page_range = None
             start_page, end_page = get_page_range(doc, page_range)
             
             pages_text = []
@@ -140,7 +146,7 @@ def read_pdf_text(file_path: str, page_range: Optional[Dict] = None) -> Dict[str
         }
 
 @mcp.tool()
-def extract_pdf_images(file_path: str, output_dir: Optional[str] = None, page_range: Optional[Dict] = None) -> Dict[str, Any]:
+def extract_pdf_images(file_path: str, output_dir: Optional[str] = None, page_range_start: Optional[int|str] = None, page_range_end: Optional[int|str] = None) -> Dict[str, Any]:
     """
     Extract all images from a PDF file
     
@@ -163,6 +169,13 @@ def extract_pdf_images(file_path: str, output_dir: Optional[str] = None, page_ra
         extracted_images = []
         
         with fitz.open(str(path)) as doc:
+            if page_range_start is not None or page_range_end is not None:
+                page_range = {
+                    "start": page_range_start,
+                    "end": page_range_end
+                }
+            else:
+                page_range = None
             start_page, end_page = get_page_range(doc, page_range)
             
             for page_num in range(start_page, end_page + 1):
@@ -229,7 +242,7 @@ def extract_pdf_images(file_path: str, output_dir: Optional[str] = None, page_ra
         }
 
 @mcp.tool()
-def read_pdf_with_ocr(file_path: str, page_range: Optional[Dict] = None, ocr_language: str = "eng") -> Dict[str, Any]:
+def read_pdf_with_ocr(file_path: str, page_range_start: Optional[int|str] = None, page_range_end: Optional[int|str] = None, ocr_language: str = "eng") -> Dict[str, Any]:
     """
     Extract text from PDF including OCR text from images
     
@@ -245,6 +258,13 @@ def read_pdf_with_ocr(file_path: str, page_range: Optional[Dict] = None, ocr_lan
         path = normalize_and_validate_file_path(file_path)
         
         with fitz.open(str(path)) as doc:
+            if page_range_start is not None or page_range_end is not None:
+                page_range = {
+                    "start": page_range_start,
+                    "end": page_range_end
+                }
+            else:
+                page_range = None
             start_page, end_page = get_page_range(doc, page_range)
             
             pages_data = []
@@ -536,47 +556,16 @@ def analyze_pdf_structure(file_path: str) -> Dict[str, Any]:
         }
 
 
-@mcp.tool()
-def get_system_prompt() -> Dict[str, Any]:
-    """
-    Get the system prompt that provides guidance on how to use the research assistant tools.
-    
-    Returns:
-        Dictionary containing the system prompt and usage instructions
-    """
-    return {
-        "success": True,
-        "system_prompt": SYSTEM_PROMPT,
-        "instructions": {
-            "citation_style": "APA (Author year)",
-            "requirement": "Use research assistant tools when available",
-            "accuracy": "Refer to information from sources, do not make things up"
-        },
-        "available_tools": [
-            "read_pdf_text - Extract text content from PDF files",
-            "extract_pdf_images - Extract images from PDF files", 
-            "read_pdf_with_ocr - Extract text including OCR from images",
-            "get_pdf_info - Get PDF metadata and information",
-            "analyze_pdf_structure - Analyze PDF structure and content",
-            "search_title - Search for files by filename/author",
-            "search_content - Semantic search across PDF content"
-        ]
-    }
 
 @mcp.prompt()
-def get_prompt_template() -> str:
+def system_prompt() -> str:
     """
     Provide a prompt template for interacting with the research assistant.
     
     Returns:
         A string containing the prompt template
     """
-    return (
-        "You are a research assistant with access to various tools for reading and analyzing PDF documents. "
-        "When answering questions, always use the available tools to find accurate information. "
-        "Cite your sources using APA format (Author year) based on the filenames or metadata of the PDFs you reference. "
-        "Do not fabricate information; if you cannot find an answer using the tools, state that you do not know."
-    )
+    return """If available, use the research assistant tools and cite the sources using APA style (Author year). Refer to information from the sources and do not make things up."""
 
 @mcp.tool()
 def search_title(query: str, top_n: int = 10) -> Dict[str, Any]:
@@ -694,23 +683,27 @@ def search_content(query: str, max_num_chunks: int = 25, max_num_files: int = 5)
             }
         
         # aggregate by filename using the min distance
+        documents = results['documents'][0] if results['documents'] else []
         distances = results['distances'][0] if results['distances'] else []
         metadatas = results['metadatas'][0] if results['metadatas'] else []
         ids = results['ids'][0] if results['ids'] else []
         
         # Aggregate by filename, keeping the minimum distance for each file
         filename_distances = {}
-
+        filename_matches = {}
+        filename_pages = {}
         # Track per-file page hits with their distances for later sorting
         file_pages: dict[str, list[tuple[float, int, float]]] = {}
-        for doc_id, distance, metadata in zip(ids, distances, metadatas):
+        for doc_id, document, distance, metadata in zip(ids, documents, distances, metadatas):
             # Extract filename from metadata or document ID
             filename = metadata.get('filename', doc_id) if metadata else doc_id
-            
+            page_number = metadata.get('page_number') if metadata else None
 
             # Keep the minimum distance (best match) for each filename
             if filename not in filename_distances or distance < filename_distances[filename]:
                 filename_distances[filename] = distance
+                filename_matches[filename] = document
+                filename_pages[filename] = page_number
         
             # collect from metadatas the pages where the match was found and the similarity score
             # sort by distance (lower is better)
@@ -729,7 +722,11 @@ def search_content(query: str, max_num_chunks: int = 25, max_num_files: int = 5)
         for i, (filename, distance) in enumerate(sorted_files):
             # Convert distance to similarity score (lower distance = higher similarity)
             similarity = 2 - distance  # Assuming distance is in [0, 2]
-            record = {"rank": i, "filename": filename, "best_similarity": f"{similarity:.4f}"}
+            record = {"rank": i, "filename": filename, 
+                      "best_match_similarity": f"{similarity:.4f}",
+                      "best_match_text": filename_matches[filename],
+                      "best_match_page": filename_pages[filename]
+                      }
             # Attach page-level hits sorted by distance (best first), deduplicated by page
             if filename in file_pages:
                 # Sort by distance ascending and deduplicate pages keeping best (lowest distance)
@@ -740,8 +737,8 @@ def search_content(query: str, max_num_chunks: int = 25, max_num_files: int = 5)
                         continue
                     seen_pages.add(p)
                     page_entries.append({"page": p, "similarity": f"{s:.4f}"})
-                record["page_hits"] = len(page_entries)
-                record["pages"] = page_entries
+                record["all_matches_number"] = len(page_entries)
+                record["all_matches_pages"] = page_entries
             candidates.append(record)
         return {
             "query": query,
@@ -786,8 +783,6 @@ def register_pdfs(
             # Return raw bytes so binary files work too
             return target.read_bytes()
         
-        RESOURCES[display_name] = _file_resource
-        URI_INDEX[display_name] = uri
         return _file_resource
 
     # Build a list of candidate paths honoring ignore rules
