@@ -86,17 +86,44 @@ def get_page_range(doc: fitz.Document, page_range: Optional[Dict[str, int]] = No
 @mcp.tool()
 def read_pdf_text(file_path: str, page_range_start: Optional[int|str] = None, page_range_end: Optional[int|str] = None) -> Dict[str, Any]:
     """
-    Extract text content from a PDF file
+    Extract plain text content from a PDF file.
+    It supports selective page reading for efficient processing
+    of large documents when you only need specific sections.
     
     Args:
-        file_path: Path to the PDF file to read
-        page_range_start and page_range_end page numbers (1-indexed)
+        file_path (str): Path to the PDF file to read. Can be absolute or relative to 
+                        the configured library directory.
+        page_range_start (Optional[int|str], optional): Starting page number for extraction 
+                                                       (1-indexed). If None, starts from first page.
+        page_range_end (Optional[int|str], optional): Ending page number for extraction 
+                                                     (1-indexed). If None, reads to last page.
     
     Returns:
-        Dictionary containing extracted text and metadata
+        Dict[str, Any]: Dictionary containing:
+            - success (bool): Whether extraction was successful
+            - file_path (str): Resolved path to the PDF file
+            - pages_processed (str): Range of pages processed (e.g., "1-5")
+            - total_pages (int): Total number of pages in the PDF
+            - pages_text (List[Dict]): Per-page text data with page numbers and word counts
+            - combined_text (str): All extracted text concatenated
+            - total_word_count (int): Total word count across all processed pages
+            - total_character_count (int): Total character count including whitespace
+            - error (str, optional): Error message if success is False
+        
+    Performance Notes:
+        - For large PDFs, consider using page ranges to limit processing
+        - Text extraction is fast but memory usage scales with document size
+        - Use this for searchable PDFs; for scanned documents, use read_pdf_with_ocr()
+        
+    Error Handling:
+        Returns success=False with error message for:
+        - File not found or inaccessible
+        - Non-PDF files
+        - Corrupted or password-protected PDFs
+        - Invalid page range specifications
     
     Hint: When search results return specific page numbers, consider using page_range
-    to read only relevant pages (e.g., {"start": 5, "end": 7}) rather than the entire
+    to read only relevant pages (e.g., page_range_start=5, page_range_end=7) rather than the entire
     document. This is more efficient for obtaining targeted information around search hits.
     For comprehensive analysis, omit page_range to read the full document.
     """
@@ -148,15 +175,41 @@ def read_pdf_text(file_path: str, page_range_start: Optional[int|str] = None, pa
 @mcp.tool()
 def extract_pdf_images(file_path: str, output_dir: Optional[str] = None, page_range_start: Optional[int|str] = None, page_range_end: Optional[int|str] = None) -> Dict[str, Any]:
     """
-    Extract all images from a PDF file
-    
+    Extract all images from a PDF file and save them as PNG files.
+        
     Args:
-        file_path: Path to the PDF file
-        output_dir: Directory to save extracted images (optional, defaults to temp dir)
-        page_range: Optional dict with 'start' and 'end' page numbers (1-indexed)
+        file_path (str): Path to the PDF file to process. Can be absolute or relative 
+                        to the configured library directory.
+        output_dir (Optional[str], optional): Directory path where extracted images will be saved.
+                                            If None, creates a temporary directory with prefix 'pdf_images_'.
+        page_range_start (Optional[int|str], optional): Starting page number for image extraction 
+                                                       (1-indexed). If None, starts from first page.
+        page_range_end (Optional[int|str], optional): Ending page number for image extraction 
+                                                     (1-indexed). If None, processes to last page.
     
     Returns:
-        Dictionary containing information about extracted images
+        Dict[str, Any]: Dictionary containing:
+            - success (bool): Whether extraction was successful
+            - file_path (str): Resolved path to the PDF file  
+            - output_directory (str): Directory where images were saved
+            - pages_processed (str): Range of pages processed (e.g., "1-5")
+            - images_extracted (int): Total number of images successfully extracted
+            - images (List[Dict]): Detailed information about each extracted image:
+                * page_number (int): PDF page where image was found
+                * image_index (int): Index of image on that page
+                * filename (str): Generated filename for the image
+                * path (str): Full path to the saved image file
+                * width (int): Image width in pixels
+                * height (int): Image height in pixels  
+                * size_bytes (int): File size of the extracted image
+            - error (str, optional): Error message if success is False
+            
+    Error Handling:
+        Returns success=False with error message for:
+        - File not found or inaccessible PDF files
+        - Permission errors when creating output directory
+        - Corrupted or password-protected PDFs
+        - Individual image extraction failures are logged but don't stop processing    
     """
     try:
         path = normalize_and_validate_file_path(file_path)
@@ -369,13 +422,69 @@ def read_pdf_with_ocr(file_path: str, page_range_start: Optional[int|str] = None
 @mcp.tool()
 def get_pdf_info(file_path: str) -> Dict[str, Any]:
     """
-    Get metadata and information about a PDF file
+    Get comprehensive metadata and structural information about a PDF file.
+    
+    This function provides detailed information about PDF files including document metadata,
+    file statistics, page details, and content analysis. It's useful for understanding
+    document structure before processing or for generating document summaries.
     
     Args:
-        file_path: Path to the PDF file
+        file_path (str): Path to the PDF file to analyze. Can be absolute or relative 
+                        to the configured library directory.
     
     Returns:
-        Dictionary containing PDF metadata and statistics
+        Dict[str, Any]: Comprehensive information dictionary containing:
+            - success (bool): Whether analysis completed successfully
+            - file_path (str): Resolved path to the PDF file
+            - file_info (Dict): File system information:
+                * size_bytes (int): File size in bytes
+                * size_mb (float): File size in megabytes (rounded to 2 decimals)
+                * created (float): Creation timestamp
+                * modified (float): Last modification timestamp
+            - pdf_metadata (Dict): PDF document metadata:
+                * title (str): Document title from metadata
+                * author (str): Document author from metadata
+                * subject (str): Document subject/description
+                * creator (str): Application that created the PDF
+                * producer (str): Application that produced the PDF
+                * creation_date (str): PDF creation date
+                * modification_date (str): PDF last modification date
+            - document_stats (Dict): Document content statistics:
+                * total_pages (int): Number of pages in the PDF
+                * total_images (int): Total number of embedded images
+                * pages_with_text (int): Number of pages containing text
+                * pages_with_images (int): Number of pages containing images
+                * is_encrypted (bool): Whether PDF is password protected
+                * can_extract_text (bool): Whether text extraction is possible
+            - page_details (List[Dict]): Per-page detailed information
+            - error (str, optional): Error message if success is False
+    
+    Usage Examples:
+        # Get basic PDF information
+        info = get_pdf_info("document.pdf")
+        
+        # Check if PDF is suitable for text extraction
+        info = get_pdf_info("report.pdf")
+        if info["success"] and not info["document_stats"]["is_encrypted"]:
+            print(f"Ready to process {info['document_stats']['total_pages']} pages")
+    
+    Analysis Features:
+        - Extracts all available PDF metadata fields
+        - Analyzes content distribution across pages
+        - Identifies pages with text vs. image-only content
+        - Measures page dimensions for layout analysis
+        - Detects encryption and text extraction capabilities
+        
+    Performance Notes:
+        - Fast operation that doesn't extract full content
+        - Memory usage is minimal regardless of PDF size
+        - Suitable for batch analysis of large PDF collections
+        
+    Error Handling:
+        Returns success=False with error message for:
+        - File not found or inaccessible
+        - Non-PDF files or corrupted PDF files
+        - Permission errors when accessing the file
     """
     try:
         path = normalize_and_validate_file_path(file_path)
@@ -555,22 +664,10 @@ def analyze_pdf_structure(file_path: str) -> Dict[str, Any]:
             "file_path": file_path
         }
 
-
-
-@mcp.prompt()
-def system_prompt() -> str:
-    """
-    Provide a prompt template for interacting with the research assistant.
-    
-    Returns:
-        A string containing the prompt template
-    """
-    return """If available, use the research assistant tools and cite the sources using APA style (Author year). Refer to information from the sources and do not make things up."""
-
 @mcp.tool()
 def search_title(query: str, top_n: int = 10) -> Dict[str, Any]:
     """
-    Select the single most relevant resource by counting token overlap
+    Select the single most relevant files by counting token overlap
     between the query and the file name. Returns a ranked list.
     Useful for searching for an author.
     
@@ -642,7 +739,7 @@ def search_content(query: str, max_num_chunks: int = 25, max_num_files: int = 5)
         max_num_files: Maximum number of unique files to return (default: 5)
     
     Note: When citing results from this search, use APA format (Author year)
-    based on the filename or extracted metadata from the PDF sources.
+    based on the filename.
     
     Hint: Adjust parameters based on search scope and depth needs:
     - For focused research: Use lower values (max_num_chunks=10-15, max_num_files=2-3)
