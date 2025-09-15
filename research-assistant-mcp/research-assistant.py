@@ -960,13 +960,14 @@ def initialize_chromadb():
         collections = chroma_client.list_collections()
         if collections:
             chroma_collection = collections[0]
+            chroma_manager.collection
             logger.info(f"Connected to ChromaDB collection: {chroma_collection.name}")
         else:
             logger.warning("Warning: No collections found in ChromaDB")
 
         if args.update_db:
             logger.info("updating ChromaDB with new PDFs from the library directory...")
-            chroma_manager.sync_database(root.as_posix(), progress_callback=lambda i, msg: logger.info(str(i) + "% " + msg))
+            chroma_manager.sync_database(root.as_posix(), progress_callback=lambda i, msg: logger.info(" " + str(i) + "% " + msg))
 
     except Exception as e:
         logger.error(f"Error initializing ChromaDB: {e}")

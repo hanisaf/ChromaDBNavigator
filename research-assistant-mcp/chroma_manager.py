@@ -28,7 +28,7 @@ class ChromaManager:
             print(f"Error detecting optimal device, falling back to CPU: {e}")
             return "cpu"
     
-    def __init__(self, db_path: str , settings, collection_name: str = "library"):       
+    def __init__(self, db_path: str , settings, collection_name: str = "references"):       
         self.db_path = db_path
         self.collection_name = collection_name
         self.client = None
@@ -96,30 +96,23 @@ class ChromaManager:
             
         return device_info
 
-    def _get_existing_files(self) -> Dict[str, str]:
+    def _get_existing_files(self) -> List[str]:
         """Get existing files in the database with their hashes."""
-        try:
-            # Get all documents and extract filename -> hash mapping
-            # For ChromaDB 0.3.25, we need to use get() with proper parameters
-            results = self.collection.get(
-                include=['metadatas']
-                # No limit - get all documents
-            )
+        results = self.collection.get(
+            include=['metadatas']
+            # No limit - get all documents
+        )
+        
+        existing_files = []
+        if results['metadatas']:
+            for metadata in results['metadatas']:
+                if metadata and 'filename' in metadata:
+                    filename = metadata['filename']
+                    existing_files.append(filename)
+        
+        return sorted(set(existing_files))
             
-            existing_files = {}
-            if results['metadatas']:
-                for metadata in results['metadatas']:
-                    if metadata and 'filename' in metadata:
-                        filename = metadata['filename']
-                        filepath = metadata.get('filepath', '')
-                        if filepath and os.path.exists(filepath):
-                            existing_files[filename] = self._generate_file_hash(filepath)
-            
-            return existing_files
-            
-        except Exception as e:
-            print(f"Warning: Could not retrieve existing files: {e}")
-            return {}
+
     
     def preview_sync_changes(self, folder_path: str) -> Dict:
         """
@@ -177,6 +170,7 @@ class ChromaManager:
                 progress = (current_operation / total_operations) * 100
                 progress_callback(min(progress, 100), message)
         
+        update_progress("Total sync operations = " + str(total_operations), False)
         # Remove deleted files from database
         if removed_files:
             update_progress("Removing deleted files from database...", False)
@@ -214,23 +208,17 @@ class ChromaManager:
         if not filenames:
             return 0
         
-        try:
-            # Get all documents with matching filenames
-            # For ChromaDB 0.3.25, we need to use where clause properly
-            results = self.collection.get(
-                where={"filename": {"$in": filenames}},
-                include=['ids']
-            )
-            
-            if results['ids']:
-                self.collection.delete(ids=results['ids'])
-                return len(results['ids'])
-            
-            return 0
-            
-        except Exception as e:
-            print(f"Warning: Could not remove files from database: {e}")
-            return 0
+
+        # Get all documents with matching filenames
+        # For ChromaDB 0.3.25, we need to use where clause properly
+        results = self.collection.get(
+            where={"filename": {"$in": filenames}},
+        )
+        
+        if results['ids']:
+            self.collection.delete(ids=results['ids'])
+            return len(results['ids'])
+
     
     def _add_file_to_db(self, filepath: str):
         """Add a single file to the database."""
