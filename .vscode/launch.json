@@ -12,12 +12,20 @@
             "args": "--library_directory test_data/pdfs --chroma_db_path test_data/pdfs_db --limit_text -1 --update_db False"
         },
         {
-            "name": "Mendeley",
+            "name": "Mendeley Mac",
             "type": "debugpy",
             "request": "launch",
             "program": "research-assistant-mcp/research-assistant.py",
             "console": "integratedTerminal",
             "args": "--library_directory \"/Users/hanisaf/Documents/Mendeley Desktop\" --chroma_db_path \"/Users/hanisaf/Documents/Mendeley Chroma\" --limit_text -1 --update_db True"
+        },
+        {
+            "name": "Mendeley Windows",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "research-assistant-mcp/research-assistant.py",
+            "console": "integratedTerminal",
+            "args": "--library_directory \"C:\\Users\\hanisaf\\Documents\\Mendeley Desktop\" --chroma_db_path \"C:\\Users\\hanisaf\\Documents\\Mendeley Chroma\" --limit_text -1 --update_db True"
         }
     ]
 }
