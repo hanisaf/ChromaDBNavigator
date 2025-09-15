@@ -22,6 +22,8 @@ import pytesseract
 from typing import Any, Dict, List, Optional, Tuple
 from fastmcp import FastMCP
 from PIL import Image
+from chromadb.api import ClientAPI
+from chroma_manager import ChromaManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -33,11 +35,11 @@ parser = argparse.ArgumentParser(description="Research Assistant MCP Server")
 parser.add_argument(
     "--library_directory", default=os.path.expanduser("~/Downloads/pdfs"))
 parser.add_argument(
-    "--chroma_db_path", default=os.path.expanduser("~/Projects/mcp_demo/pdfs_db"))
+    "--chroma_db_path", default=os.path.expanduser("~/Downloads/pdfs_db"))
 parser.add_argument("--limit_text", default=-1)
 parser.add_argument(
-    "--read_only", action="store_true", 
-    help="Enable read-only mode for ChromaDB (prevents file modifications, ideal for network storage)")
+    "--update_db", default=False, 
+    help="Update the ChromaDB database with new PDFs in the library directory",)
 
 args = parser.parse_args()
 
@@ -48,8 +50,8 @@ SYSTEM_PROMPT = """If available, use the research assistant tools and cite the s
 mcp = FastMCP("research assistant")
 
 # Initialize ChromaDB client
-chroma_client = None
-chroma_collection = None
+chroma_client: ClientAPI | None = None
+chroma_collection: chromadb.Collection | None = None
 
 # In-memory index of registered resources for quick lookup/search
 # Key: URI, Value: dict(name, path, size, mtime, pages)
@@ -945,29 +947,14 @@ def register_pdfs(
 
 def initialize_chromadb():
     """Initialize ChromaDB client and collection in read-only mode."""
-    global chroma_client, chroma_collection
+    global chroma_manager, chroma_client, chroma_collection
     
     try:
         # Prepare ChromaDB settings
         settings_config = Settings(anonymized_telemetry=False)
         
-        # Apply read-only SQLite configuration if requested
-        if args.read_only:
-            logger.info("Initializing ChromaDB in read-only mode for network storage compatibility")
-            settings_config.sqlite_options = {
-                "journal_mode": "OFF",      # Disable WAL journaling
-                "synchronous": "OFF",       # No disk synchronization  
-                "cache_size": -64000,       # 64MB cache (negative = KB)
-                "temp_store": "MEMORY",     # Store temp tables in memory
-                "mmap_size": 0,             # Disable memory mapping
-                "query_only": True          # Read-only mode
-            }
-        
-        # Initialize ChromaDB client
-        chroma_client = chromadb.PersistentClient(
-            path=args.chroma_db_path,
-            settings=settings_config
-        )
+        chroma_manager = ChromaManager(args.chroma_db_path, settings_config)
+        chroma_client = chroma_manager.client
         
         # Get the first available collection (assuming there's one)
         collections = chroma_client.list_collections()
@@ -976,7 +963,11 @@ def initialize_chromadb():
             logger.info(f"Connected to ChromaDB collection: {chroma_collection.name}")
         else:
             logger.warning("Warning: No collections found in ChromaDB")
-            
+
+        if args.update_db:
+            logger.info("updating ChromaDB with new PDFs from the library directory...")
+            chroma_manager.sync_database(root.as_posix(), progress_callback=lambda i, msg: logger.info(str(i) + "% " + msg))
+
     except Exception as e:
         logger.error(f"Error initializing ChromaDB: {e}")
         chroma_client = None

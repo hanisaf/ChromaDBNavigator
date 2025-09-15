@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Python Debugger: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "research-assistant-mcp/research-assistant.py",
+            "console": "integratedTerminal",
+            "args": "--library_directory test_data/pdfs --chroma_db_path test_data/pdfs_db --limit_text -1 --update_db False"
+        }
+    ]
+}
