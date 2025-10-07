@@ -50,8 +50,8 @@ mcp = FastMCP(description)
 
 # Initialize ChromaDB client
 chroma_client: ClientAPI 
-chroma_collection: chromadb.Collection
-chroma_manager : ChromaManager
+chroma_collection: chromadb.Collection 
+chroma_manager : ChromaManager 
 
 # In-memory index of registered resources for quick lookup/search
 # Key: URI, Value: dict(name, path, size, mtime, pages)
@@ -951,6 +951,8 @@ def initialize_chromadb():
         # Prepare ChromaDB settings
         settings_config = Settings(anonymized_telemetry=False)
         
+        global chroma_manager, chroma_client, chroma_collection
+
         chroma_manager = ChromaManager(args.chroma_db_path, settings_config)
         chroma_client = chroma_manager.client
         
