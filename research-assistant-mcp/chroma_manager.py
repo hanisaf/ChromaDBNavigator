@@ -3,7 +3,7 @@ from typing import List, Dict, Optional, Tuple
 import chromadb
 from sentence_transformers import SentenceTransformer
 import torch
-
+from pdf_processor import PDFProcessor
 
 class ChromaManager:
     """Manages ChromaDB operations for PDF chunks."""
@@ -222,7 +222,6 @@ class ChromaManager:
     
     def _add_file_to_db(self, filepath: str):
         """Add a single file to the database."""
-        from pdf_processor import PDFProcessor
         
         # Process the PDF
         processor = PDFProcessor()

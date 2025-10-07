@@ -2,9 +2,8 @@
 # structure from https://github.com/anthropics/dxt/blob/main/examples/file-manager-python/server/main.py
 # some code from https://github.com/labeveryday/mcp_pdf_reader
 
-import base64
 from io import BytesIO
-import re, sys
+import re
 import mimetypes
 import os
 import argparse
@@ -12,7 +11,6 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from urllib.parse import quote
 from datetime import datetime
-from pypdf import PdfReader
 import chromadb
 from chromadb.config import Settings 
 import tempfile
@@ -26,12 +24,13 @@ from chromadb.api import ClientAPI
 from chroma_manager import ChromaManager
 
 # Configure logging
+description="Research Assistant MCP Server"
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("pdf-reader-server")
+logger = logging.getLogger(description)
 
 
 # Parse command line arguments
-parser = argparse.ArgumentParser(description="Research Assistant MCP Server")
+parser = argparse.ArgumentParser(description=description)
 parser.add_argument(
     "--library_directory", default=os.path.expanduser("~/Downloads/pdfs"))
 parser.add_argument(
@@ -47,15 +46,16 @@ args = parser.parse_args()
 SYSTEM_PROMPT = """If available, use the research assistant tools and cite the sources using APA style (Author year). Refer to information from the sources and do not make things up."""
 
 # Initialize server
-mcp = FastMCP("research assistant")
+mcp = FastMCP(description)
 
 # Initialize ChromaDB client
-chroma_client: ClientAPI | None = None
-chroma_collection: chromadb.Collection | None = None
+chroma_client: ClientAPI 
+chroma_collection: chromadb.Collection
+chroma_manager : ChromaManager
 
 # In-memory index of registered resources for quick lookup/search
 # Key: URI, Value: dict(name, path, size, mtime, pages)
-root : Path = Path('.')  # Will be reset in main
+root : Path 
 RESOURCE_INDEX: dict[str, dict] = {}
 
 def normalize_and_validate_file_path(file_path: str) -> Path:
@@ -750,7 +750,6 @@ def search_content(query: str, max_num_chunks: int = 25, max_num_files: int = 5)
     - For deep dive: Increase max_num_chunks (40-60) with fewer files (3-5)
     - Start with defaults and adjust based on result relevance and coverage
     """
-    global chroma_client, chroma_collection
     
     if not query.strip():
         return {
@@ -947,7 +946,6 @@ def register_pdfs(
 
 def initialize_chromadb():
     """Initialize ChromaDB client and collection in read-only mode."""
-    global chroma_manager, chroma_client, chroma_collection
     
     try:
         # Prepare ChromaDB settings
@@ -971,11 +969,9 @@ def initialize_chromadb():
 
     except Exception as e:
         logger.error(f"Error initializing ChromaDB: {e}")
-        chroma_client = None
-        chroma_collection = None
 
 if __name__ == "__main__":
-    logger.info("Starting Research Assistant MCP Server...")
+    logger.info(description)
     logger.info(f"Arguments: `{args}`")
     # Register library files as MCP resources
     root = Path(args.library_directory).expanduser().resolve()
