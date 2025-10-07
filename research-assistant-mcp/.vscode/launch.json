@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Research Assistant Library",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+    "--library_directory",
+    "C:\\Users\\hanisaf\\Documents\\Mendeley Desktop",
+    "--chroma_db_path",
+    "C:\\Users\\hanisaf\\Dropbox\\claude_references",
+    "--limit_text",
+    "-1"
+  ],
+        },
+
+    ]
+}
