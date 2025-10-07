@@ -751,6 +751,8 @@ def search_content(query: str, max_num_chunks: int = 25, max_num_files: int = 5)
     - Start with defaults and adjust based on result relevance and coverage
     """
     
+    global chroma_manager, chroma_client, chroma_collection
+
     if not query.strip():
         return {
             "query": query,
@@ -965,7 +967,7 @@ def initialize_chromadb():
         else:
             logger.warning("Warning: No collections found in ChromaDB")
 
-        if args.update_db:
+        if args.update_db=='True':
             logger.info("updating ChromaDB with new PDFs from the library directory...")
             chroma_manager.sync_database(root.as_posix(), progress_callback=lambda i, msg: logger.info(" " + str(i) + "% " + msg))
 

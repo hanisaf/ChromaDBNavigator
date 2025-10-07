@@ -15,7 +15,7 @@
             "request": "launch",
             "program": "research-assistant-mcp/research-assistant.py",
             "console": "integratedTerminal",
-            "args": "--library_directory \"/Users/hanisaf/Documents/Mendeley Desktop\" --chroma_db_path \"/Users/hanisaf/Documents/Mendeley Chroma\" --limit_text -1 --update_db True"
+            "args": "--library_directory /Users/hanisaf/Documents/Mendeley_Desktop --chroma_db_path /Users/hanisaf/Documents/Mendeley_Chroma --limit_text -1 --update_db True"
         },
         {
             "name": "Mendeley Windows",
