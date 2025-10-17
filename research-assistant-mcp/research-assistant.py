@@ -979,8 +979,8 @@ if __name__ == "__main__":
     logger.info(f"Arguments: `{args}`")
     # Register library files as MCP resources
     root = Path(args.library_directory).expanduser().resolve()
-    register_pdfs(args.library_directory)
     # Initialize ChromaDB
     initialize_chromadb()
+    register_pdfs(args.library_directory)
     # Run the server
     mcp.run()
