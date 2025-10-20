@@ -49,9 +49,9 @@ SYSTEM_PROMPT = """If available, use the research assistant tools and cite the s
 mcp = FastMCP(description)
 
 # Initialize ChromaDB client
-chroma_client: ClientAPI 
-chroma_collection: chromadb.Collection 
-chroma_manager : ChromaManager 
+chroma_manager: Optional[ChromaManager] = None
+chroma_client: Optional[ClientAPI] = None
+chroma_collection: Optional[chromadb.Collection] = None
 
 # In-memory index of registered resources for quick lookup/search
 # Key: URI, Value: dict(name, path, size, mtime, pages)
@@ -750,9 +750,6 @@ def search_content(query: str, max_num_chunks: int = 25, max_num_files: int = 5)
     - For deep dive: Increase max_num_chunks (40-60) with fewer files (3-5)
     - Start with defaults and adjust based on result relevance and coverage
     """
-    
-    global chroma_manager, chroma_client, chroma_collection
-
     if not query.strip():
         return {
             "query": query,
@@ -946,41 +943,52 @@ def register_pdfs(
             # Never let a single bad file break registration
             continue
 
-def initialize_chromadb():
+def initialize_chromadb(library_root: Path) -> tuple[Optional[ChromaManager], Optional[ClientAPI], Optional[chromadb.Collection]]:
     """Initialize ChromaDB client and collection in read-only mode."""
-    
+    manager: Optional[ChromaManager] = None
+    client: Optional[ClientAPI] = None
+    collection: Optional[chromadb.Collection] = None
+
     try:
         # Prepare ChromaDB settings
         settings_config = Settings(anonymized_telemetry=False)
-        
-        global chroma_manager, chroma_client, chroma_collection
 
-        chroma_manager = ChromaManager(args.chroma_db_path, settings_config)
-        chroma_client = chroma_manager.client
+        manager = ChromaManager(args.chroma_db_path, settings_config)
+        client = manager.client
         
         # Get the first available collection (assuming there's one)
-        collections = chroma_client.list_collections()
+        collections = client.list_collections()
         if collections:
-            chroma_collection = collections[0]
-            chroma_manager.collection
-            logger.info(f"Connected to ChromaDB collection: {chroma_collection.name}")
+            collection = collections[0]
+            manager.collection
+            logger.info(f"Connected to ChromaDB collection: {collection.name}")
         else:
             logger.warning("Warning: No collections found in ChromaDB")
 
         if args.update_db=='True':
             logger.info("updating ChromaDB with new PDFs from the library directory...")
-            chroma_manager.sync_database(root.as_posix(), progress_callback=lambda i, msg: logger.info(" " + str(i) + "% " + msg))
+            manager.sync_database(
+                library_root.as_posix(),
+                progress_callback=lambda i, msg: logger.info(" " + str(i) + "% " + msg),
+            )
 
     except Exception as e:
         logger.error(f"Error initializing ChromaDB: {e}")
+        return None, None, None
+
+    return manager, client, collection
 
 if __name__ == "__main__":
     logger.info(description)
     logger.info(f"Arguments: `{args}`")
     # Register library files as MCP resources
+    logger.info(f"Using library directory: {args.library_directory}")
     root = Path(args.library_directory).expanduser().resolve()
     # Initialize ChromaDB
-    initialize_chromadb()
+    chroma_manager, chroma_client, chroma_collection = initialize_chromadb(root)
+    logger.info(f"ChromaDB initialized: manager={chroma_manager is not None}, client={chroma_client is not None}, collection={chroma_collection is not None}")
+    logger.info("Registering PDF files in the library...")
     register_pdfs(args.library_directory)
+    logger.info(f"Registered {len(RESOURCE_INDEX)} PDF resources.")
     # Run the server
     mcp.run()
