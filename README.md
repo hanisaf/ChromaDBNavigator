@@ -37,3 +37,13 @@ A desktop application for syncing PDF files with a ChromaDB vector database, bui
 - ChromaDB 0.3.25
 - PyPDF for PDF processing
 - Sentence Transformers for embeddings
+
+## Using uv to install requirments
+
+uv pip compile requirements.txt --universal --output-file requirements.uv
+
+uv venv
+
+source .venv/bin/activate
+
+uv pip sync requirements.uv
