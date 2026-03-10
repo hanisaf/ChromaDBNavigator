@@ -36,7 +36,6 @@ class SyncWorker(QThread):
     def run(self):
         try:
             def progress_callback(progress, message):
-                print(f"SyncWorker emitting progress: {progress}% - {message}")  # Debug output
                 self.progress_updated.emit(int(progress), message)
             
             added, removed, corrupted = self.chroma_manager.sync_database(
@@ -57,6 +56,9 @@ class MainWindow(QMainWindow):
         self.current_folder = pdf_folder or ""
         self.current_db_path = db_path or ""
         self.current_collection = collection_name or COLLECTION_NAME
+        self._collection_reinit_timer = QTimer()
+        self._collection_reinit_timer.setSingleShot(True)
+        self._collection_reinit_timer.timeout.connect(self._do_collection_reinit)
         self.init_ui()
         self.init_chroma()
     
@@ -429,10 +431,14 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Selected database path: {db_path}")
     
     def on_collection_changed(self, text):
-        """Handle collection name change."""
+        """Handle collection name change (debounced to avoid reinit on every keystroke)."""
         self.current_collection = text
-        self.init_chroma() # Re-initialize chroma_manager with new collection
-        self.statusBar().showMessage(f"Collection changed to: {text}")
+        self._collection_reinit_timer.start(800)
+
+    def _do_collection_reinit(self):
+        """Actually reinitialize ChromaDB after debounce delay."""
+        self.init_chroma()
+        self.statusBar().showMessage(f"Collection changed to: {self.current_collection}")
     
     def load_file_tree(self):
         """Load PDF files into the file tree."""
@@ -573,17 +579,16 @@ class MainWindow(QMainWindow):
         # Create and start worker thread
         self.sync_worker = SyncWorker(self.chroma_manager, self.current_folder)
         self.sync_worker.progress_updated.connect(self.update_sync_progress)
-        self.sync_worker.sync_completed.connect(self.sync_completed)
+        self.sync_worker.sync_completed.connect(self.on_sync_completed)
         self.sync_worker.error_occurred.connect(self.sync_error)
         self.sync_worker.start()
     
     def update_sync_progress(self, progress, message):
         """Update sync progress bar."""
-        print(f"Progress update: {progress}% - {message}")  # Debug output
         self.progress_bar.setValue(int(progress))
         self.statusBar().showMessage(message)
-    
-    def sync_completed(self, added, removed, corrupted):
+
+    def on_sync_completed(self, added, removed, corrupted):
         """Handle sync completion."""
         self.sync_btn.setEnabled(True)
         self.progress_bar.setVisible(False)

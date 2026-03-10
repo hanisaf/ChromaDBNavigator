@@ -101,6 +101,7 @@ class PDFProcessor:
                             chunk_data = {
                                 'text': chunk.strip(),
                                 'chunk_index': i,
+                                'page_number': 0,
                                 'chunk_type': 'semantic',
                                 'chunk_size': len(chunk.strip()),
                                 **metadata
@@ -114,6 +115,7 @@ class PDFProcessor:
                 chunks = [{
                     'text': text,
                     'chunk_index': 0,
+                    'page_number': 0,
                     'chunk_type': 'empty',
                     'chunk_size': len(text),
                     **metadata
@@ -164,10 +166,10 @@ class PDFProcessor:
         
         # Try to find natural breaks
         for pattern in section_patterns:
-            matches = re.finditer(pattern, text, re.IGNORECASE)
-            if matches:
+            match_positions = [m.start() for m in re.finditer(pattern, text, re.IGNORECASE)]
+            if match_positions:
                 # Split at these points
-                split_points = [0] + [m.start() for m in matches] + [len(text)]
+                split_points = [0] + match_positions + [len(text)]
                 chunks = []
                 for i in range(len(split_points) - 1):
                     chunk = text[split_points[i]:split_points[i+1]]
@@ -191,6 +193,7 @@ class PDFProcessor:
                 chunk_data = {
                     'text': stripped_chunk,
                     'chunk_index': i,
+                    'page_number': 0,
                     'chunk_type': 'recursive',
                     'chunk_size': len(stripped_chunk),
                     **metadata

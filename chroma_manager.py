@@ -114,26 +114,21 @@ class ChromaManager:
             return ""
     
     def _get_existing_files(self) -> Dict[str, str]:
-        """Get existing files in the database with their hashes."""
+        """Get existing files in the database with their stored hashes."""
         try:
-            # Get all documents and extract filename -> hash mapping
-            # For ChromaDB 0.3.25, we need to use get() with proper parameters
-            results = self.collection.get(
-                include=['metadatas']
-                # No limit - get all documents
-            )
-            
+            results = self.collection.get(include=['metadatas'])
+
             existing_files = {}
             if results['metadatas']:
                 for metadata in results['metadatas']:
                     if metadata and 'filename' in metadata:
                         filename = metadata['filename']
-                        filepath = metadata.get('filepath', '')
-                        if filepath and os.path.exists(filepath):
-                            existing_files[filename] = self._generate_file_hash(filepath)
-            
+                        file_hash = metadata.get('file_hash', '')
+                        if filename and file_hash:
+                            existing_files[filename] = file_hash
+
             return existing_files
-            
+
         except Exception as e:
             print(f"Warning: Could not retrieve existing files: {e}")
             return {}
@@ -193,7 +188,7 @@ class ChromaManager:
         corrupted_files = changes['corrupted_files'].copy()
         
         # Calculate total operations for progress tracking
-        total_operations = len(removed_files) + len(modified_files) + len(new_files) + len(modified_files)
+        total_operations = len(removed_files) + len(modified_files) + len(new_files)
         current_operation = 0
         
         def update_progress(message, increment=True):
@@ -251,21 +246,18 @@ class ChromaManager:
         """Remove files from the database."""
         if not filenames:
             return 0
-        
+
         try:
-            # Get all documents with matching filenames
-            # For ChromaDB 0.3.25, we need to use where clause properly
             results = self.collection.get(
-                where={"filename": {"$in": filenames}},
-                include=['ids']
+                where={"filename": {"$in": filenames}}
             )
-            
+
             if results['ids']:
                 self.collection.delete(ids=results['ids'])
                 return len(results['ids'])
-            
+
             return 0
-            
+
         except Exception as e:
             print(f"Warning: Could not remove files from database: {e}")
             return 0
@@ -281,22 +273,26 @@ class ChromaManager:
         if not chunks:
             raise Exception("No chunks generated from PDF")
         
+        # Generate and store file hash for change detection
+        file_hash = self._generate_file_hash(filepath)
+
         # Prepare data for ChromaDB
         ids = []
         texts = []
         metadatas = []
-        
+
         for chunk in chunks:
             # Generate unique ID for this chunk
-            chunk_id = f"{chunk['filename']}_{chunk['chunk_index']}_{chunk['page_number']}"
+            chunk_id = f"{chunk['filename']}_{chunk['chunk_index']}_{chunk.get('page_number', 0)}"
             ids.append(chunk_id)
             texts.append(chunk['text'])
-            
+
             # Prepare metadata
             metadata = {
                 'filename': chunk['filename'],
                 'filepath': chunk['filepath'],
-                'page_number': chunk['page_number'],
+                'file_hash': file_hash,
+                'page_number': chunk.get('page_number', 0),
                 'chunk_index': chunk['chunk_index'],
                 'chunk_type': chunk['chunk_type'],
                 'chunk_size': chunk['chunk_size'],
@@ -326,7 +322,12 @@ class ChromaManager:
                     if value:
                         where_clause[key] = value
             
-            # Perform search - ChromaDB 0.3.25 syntax
+            # Cap n_results to avoid error when collection is smaller than requested
+            actual_count = self.collection.count()
+            if actual_count == 0:
+                return []
+            n_results = min(n_results, actual_count)
+
             results = self.collection.query(
                 query_texts=[query],
                 n_results=n_results,
