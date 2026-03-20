@@ -1,6 +1,6 @@
 # ChromaDB PDF Navigator
 
-A desktop application for syncing PDF files with a ChromaDB vector database, built with Python and PyQt5.
+A desktop application for syncing PDF files with a ChromaDB vector database.
 
 ## Features
 
@@ -8,7 +8,8 @@ A desktop application for syncing PDF files with a ChromaDB vector database, bui
 - **ChromaDB Integration**: Stores chunks with rich metadata including APA-style references
 - **Smart Sync**: Detects new/removed PDFs and maintains database consistency
 - **Search Interface**: Query the database for specific content
-- **Modern UI**: Clean, intuitive interface with file browser and database viewer
+- **Native Windows UI**: WinForms desktop app on Windows
+- **PyQt UI (legacy)**: Existing Python interface remains available
 
 ## Installation
 
@@ -18,7 +19,24 @@ A desktop application for syncing PDF files with a ChromaDB vector database, bui
    pip install -r requirements.txt
    ```
 
-## Usage
+## Usage (Windows Native)
+
+1. Install Python dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Build and run the Windows UI:
+   ```bash
+   cd windows-native
+   dotnet run
+   ```
+3. In the app, select database path/folder and run sync/search/browse/stats.
+
+Notes:
+- The WinForms app starts `native_backend_server.py` and reuses `chroma_manager.py`.
+- If `python` is not on PATH, set `CHROMA_PYTHON_EXE` to the full Python executable path.
+
+## Usage (PyQt Legacy)
 
 1. Run the application:
    ```bash
@@ -33,10 +51,11 @@ A desktop application for syncing PDF files with a ChromaDB vector database, bui
 ## Requirements
 
 - Python 3.8+
-- PyQt5
+- PyQt5 (legacy UI)
 - ChromaDB 0.3.25
 - PyPDF for PDF processing
 - Sentence Transformers for embeddings
+- \.NET 7 SDK or newer (Windows native UI)
 
 ## Using uv to install requirments
 
